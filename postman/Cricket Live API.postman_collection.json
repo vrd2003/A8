@@ -1,0 +1,501 @@
+{
+  "info": {
+    "_postman_id": "84d681c4-f88c-426e-bf80-9cd389f01a5a",
+    "name": "Boundary Cricket Live API",
+    "description": "Smoke tests for every REST and Server-Sent Events endpoint. Run the REST API folder in order; run the live SSE request separately because its connection stays open.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "matchId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "runId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "REST API",
+      "description": "Run this folder in order. It creates a unique one-over match, exercises match lookup/start/scoring, checks conflict and validation responses, and leaves no permanent test match.",
+      "item": [
+        {
+          "name": "1. List matches",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/matches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "matches"
+              ]
+            },
+            "description": "Lists persisted matches. The scorebook can be empty or contain matches created by scorers."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('runId', Date.now().toString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('GET /api/matches returns 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Response is a JSON array of match scorecards', function () {",
+                  "  const matches = pm.response.json();",
+                  "  pm.expect(matches).to.be.an('array');",
+                  "  if (matches.length) {",
+                  "    pm.expect(matches[0]).to.have.property('homeTeam');",
+                  "    pm.expect(matches[0]).to.have.property('awayTeam');",
+                  "    pm.expect(matches[0]).to.have.property('revision');",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Create upcoming match",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"competition\": \"Postman API Check {{runId}}\",\n  \"venue\": \"Postman Test Ground\",\n  \"homeTeam\": \"Postman Home {{runId}}\",\n  \"awayTeam\": \"Postman Away {{runId}}\",\n  \"homePlayers\": [\"Home Opener {{runId}}\", \"Home Player Two {{runId}}\"],\n  \"awayPlayers\": [\"Away Opener {{runId}}\", \"Away Player Two {{runId}}\"],\n  \"battingFirst\": \"HOME\",\n  \"maxOvers\": 1,\n  \"startImmediately\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/matches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "matches"
+              ]
+            },
+            "description": "Creates a unique, one-over upcoming match so later requests can safely test start, scoring, and innings completion."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('POST /api/matches returns 201 Created', function () { pm.response.to.have.status(201); });",
+                  "const match = pm.response.json();",
+                  "pm.test('Created match contains the submitted teams, lineup, and format', function () {",
+                  "  pm.expect(match.id).to.be.a('string').and.not.empty;",
+                  "  pm.expect(match.status).to.eql('UPCOMING');",
+                  "  pm.expect(match.competition).to.include(pm.collectionVariables.get('runId'));",
+                  "  pm.expect(match.homeTeam.name).to.include('Postman Home');",
+                  "  pm.expect(match.homeTeam.runs).to.eql(0);",
+                  "  pm.expect(match.maxOvers).to.eql(1);",
+                  "  pm.expect(match.battingLineup).to.have.length(2);",
+                  "});",
+                  "pm.collectionVariables.set('matchId', match.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Get match",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/matches/{{matchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "matches",
+                "{{matchId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('GET /api/matches/{id} returns 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Match lookup returns the created upcoming fixture', function () {",
+                  "  const match = pm.response.json();",
+                  "  pm.expect(match.id).to.eql(pm.collectionVariables.get('matchId'));",
+                  "  pm.expect(match.status).to.eql('UPCOMING');",
+                  "  pm.expect(match.striker).to.include('Home Opener');",
+                  "  pm.expect(match.nonStriker).to.include('Home Player Two');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Start match",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/matches/{{matchId}}/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "matches",
+                "{{matchId}}",
+                "start"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('POST /api/matches/{id}/start returns 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Match is live with distinct opening batters', function () {",
+                  "  const match = pm.response.json();",
+                  "  pm.expect(match.status).to.eql('LIVE');",
+                  "  pm.expect(match.striker).to.include('Home Opener');",
+                  "  pm.expect(match.nonStriker).to.include('Home Player Two');",
+                  "  pm.expect(match.striker).not.to.eql(match.nonStriker);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Record a boundary",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"runs\": 4,\n  \"wicket\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/matches/{{matchId}}/deliveries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "matches",
+                "{{matchId}}",
+                "deliveries"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('POST /api/matches/{id}/deliveries returns 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Boundary updates team score, batter, bowler, and revision', function () {",
+                  "  const match = pm.response.json();",
+                  "  pm.expect(match.homeTeam.runs).to.eql(4);",
+                  "  pm.expect(match.homeTeam.balls).to.eql(1);",
+                  "  pm.expect(match.strikerStats.runs).to.eql(4);",
+                  "  pm.expect(match.strikerStats.fours).to.eql(1);",
+                  "  pm.expect(match.bowlerStats.runs).to.eql(4);",
+                  "  pm.expect(match.revision).to.eql(2);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Record final wicket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"runs\": 0,\n  \"wicket\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/matches/{{matchId}}/deliveries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "matches",
+                "{{matchId}}",
+                "deliveries"
+              ]
+            },
+            "description": "The two-player test lineup makes one wicket end the innings, validating the completed state."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Wicket delivery returns 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Last wicket completes the innings', function () {",
+                  "  const match = pm.response.json();",
+                  "  pm.expect(match.status).to.eql('COMPLETED');",
+                  "  pm.expect(match.homeTeam.runs).to.eql(4);",
+                  "  pm.expect(match.homeTeam.wickets).to.eql(1);",
+                  "  pm.expect(match.recentDeliveries).to.include('0 W');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Reject delivery after completion",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"runs\": 1,\n  \"wicket\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/matches/{{matchId}}/deliveries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "matches",
+                "{{matchId}}",
+                "deliveries"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Scoring a completed match returns 409 Conflict', function () { pm.response.to.have.status(409); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Reject missing match",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/matches/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "matches",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Unknown match returns 404 Not Found', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Reject invalid match",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"competition\": \"Invalid Postman Test\",\n  \"venue\": \"Test Ground\",\n  \"homeTeam\": \"Only One\",\n  \"awayTeam\": \"Other Team\",\n  \"homePlayers\": [\"Only One Player\"],\n  \"awayPlayers\": [\"Away One\", \"Away Two\"],\n  \"battingFirst\": \"HOME\",\n  \"maxOvers\": 20,\n  \"startImmediately\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/matches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "matches"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Invalid lineup is rejected with 400 Bad Request', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Live updates (SSE)",
+      "description": "Run this request separately. SSE stays open by design; expect an event:snapshot followed by event:score when a delivery is recorded while connected. Stop the request when finished.",
+      "item": [
+        {
+          "name": "Subscribe to score events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              },
+              {
+                "key": "Cache-Control",
+                "value": "no-cache"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/matches/stream",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "matches",
+                "stream"
+              ]
+            },
+            "description": "Keep this request running, then send a delivery request from another tab. The response stream should show an event:snapshot and an event:score."
+          }
+        }
+      ]
+    }
+  ]
+}
